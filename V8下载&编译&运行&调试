@@ -1,0 +1,122 @@
+## 准备
+
+一台阿里云服务器(香港)用来下载V8代码
+
+一台实验室高性能服务器用来编译V8代码
+
+一台自己的Ubuntu18.04用来调试
+
+## 下载
+
+进入阿里云服务器
+
+安装depot_tools
+
+```bash
+git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+echo 'export PATH=$PATH:"/depot_tools"' >> ~/.bashrc
+# clone depot_tools，并且把depot_tools的目录加到PATH环境变量，
+# /depot_tools改成depot_tools的目录
+# 因为服务器在香港所以第一个命令可以成功clone了
+```
+
+下载V8&切换版本
+
+```bash
+fetch v8 # 下载v8的repo，这个也是需要git代理才能成功下载的
+cd v8
+git checkout 版本号
+gclient sync
+```
+
+打成压缩包传到服务器上准备编译
+
+```bash
+tar -czvf v8.tar.gz v8 //压缩
+```
+
+## 编译
+
+进入实验室高性能服务器
+
+```bash
+scp root@fuwuqiIP:/root/v8.tar.gz /home //从刚才的服务器上下载压缩好的V8包
+tar -xzvf v8.tar.gz  //解压
+```
+
+安装ninja
+
+```bash
+git clone https://github.com/ninja-build/ninja.git
+cd ninja && ./configure.py --bootstrap && cd ..
+# clone并且configure
+echo 'export PATH=$PATH:"/ninja"' >> ~/.bashrc
+# /ninja改成ninja的目录
+```
+
+编译V8
+
+```bash
+./tools/dev/v8gen.py x64.debug
+ninja -C ./out.gn/x64.debug/
+
+./tools/dev/v8gen.py x64.release
+ninja -C out.gn/x64.release
+```
+
+## 运行
+
+将v8/out.gn/x64.debug文件夹下载到自己的Ubuntu18.04虚拟机
+
+```bash
+./v8/out.gn/x64.debug/d8 #运行d8 shell
+./v8/out.gn/x64.release/d8 test.js #运行test.js
+```
+
+## 调试
+
+使用GDB配合插件进行调试
+
+peda插件：
+
+```bash
+git clone https://github.com/longld/peda.git ~/peda
+echo "source ~/peda/peda.py" >> ~/.gdbinit
+```
+
+v8的gdb插件：
+
+```bash
+source /v8/tools/gdbinit
+source /v8/tools/gdb-v8-support.py
+```
+
+v8的gdb插件可以用job命令和telescope
+
+job:将JavaScript对象在内存中的数据打印成可视形态
+
+telescope:将某处地址处的数据打印出来(也可以用x/gx)
+
+Turbolizer：
+
+```bash
+cd v8/tools/turbolizer
+# 获取依赖项
+npm i
+# 构建
+npm run-script build
+# 直接在turbolizer文件夹下启动静态http服务
+python -m SimpleHTTPServer
+```
+
+可以直接使用[https://v8.github.io/tools/head/turbolizer/index.html](https://v8.github.io/tools/head/turbolizer/index.html)
+
+allow-natives-syntax选项
+
+在加载d8时加入这个选项就可以在js中调用一些有助于调试的本地运行时函数：
+
+```bash
+%DebugPrint(obj) 输出对象地址
+
+%SystemBreak() 触发调试中断主要结合gdb等调试器使用
+```
