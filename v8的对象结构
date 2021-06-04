@@ -1,0 +1,142 @@
+在 V8 中，对象主要由三个指针构成，分别是隐藏类（Hidden Class），Property 还有 Element。
+
+map大概就是描述这个对象一些信息的一个东西…也叫隐藏类(Hidden Class)
+
+![https://s3-us-west-2.amazonaws.com/secure.notion-static.com/cdca71fe-c05c-4e4d-bf52-1ebcf04f973d/Untitled.png](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/cdca71fe-c05c-4e4d-bf52-1ebcf04f973d/Untitled.png)
+
+其中，隐藏类用于描述对象的结构。Property 和 Element 用于存放对象的属性，它们的区别主要体现在键名能否被索引。
+
+```bash
+// 可索引属性会被存储到 Elements 指针指向的区域
+{ 1: "a", 2: "b" }
+
+// 命名属性会被存储到 Properties 指针指向的区域
+{ "first": 1, "second": 2 }
+```
+
+定义两个对象a、b，gdb中看一下内存，结合起来学习
+
+```bash
+function Foo1 () {}
+var a = new Foo1();
+var b = new Foo1();
+
+a.name = 'name-a';
+a.text = 'aaa';
+b.name = 'name-b';
+b.text = 'bbb';
+a[1] = "a-1";
+a[2] = "a-2";
+
+%DebugPrint(a);  //d8中用来打印object内存信息
+%DebugPrint(b);  //d8中用来打印object内存信息
+%SystemBreak();  //d8中用来中断，调试
+```
+
+map大概就是描述这个对象一些信息的一个东西…也叫隐藏类(Hidden Class)
+
+a对象中的map：
+
+```bash
+0x3414d4e4ac79: [Map]
+ - type: JS_OBJECT_TYPE         //实例类型
+ - instance size: 104           //实例大小
+ - inobject properties: 10      //对象内属性存储空间（包含未使用的slots）
+ - elements kind: HOLEY_ELEMENTS
+ - unused property fields: 8    //未使用的属性slot数
+ - enum length: invalid
+ - stable_map                   //对象当前处于快速模式（dictionary_map：字典模式）
+ - back pointer: 0x3414d4e4ac29 <Map(HOLEY_ELEMENTS)>
+ - prototype_validity cell: 0x09e99975f901 <Cell value= 1>
+ - instance descriptors (own) #2: 0x062a9128e041 <DescriptorArray[2]>
+                                //标识对象实例的属性名与其值的存取位置
+ - layout descriptor: (nil)
+ - prototype: 0x062a9128de09 <Object map = 0x3414d4e4acc9>
+ - constructor: 0x09e99975f729 <JSFunction Foo1 (sfi = 0x9e99975f401)>
+ - dependent code: 0x39d5376002c1 <Other heap object (WEAK_FIXED_ARRAY_TYPE)>
+ - construction counter: 5
+ 
+ -------------------------------------------------------------------------------
+ pwndbg> job 0x062a9128e041
+0x62a9128e041: [DescriptorArray]
+ - map: 0x39d537600271 <Map>
+ - enum_cache: empty
+ - nof slack descriptors: 0
+ - nof descriptors: 2
+ - raw marked descriptors: mc epoch 0, marked 0
+  [0]: #name (const data field 0:h, p: 0, attrs: [WEC]) @ Any
+  [1]: #text (const data field 1:h, p: 1, attrs: [WEC]) @ Any
+```
+
+## string内存分配
+
+简单测试脚本
+
+```
+var str1 = new String("aaaaaaaaaaaaaaa");
+var str2 = new String("aaaaaaaaaaaaaaa");
+var str3 = new String("bbbbbbbbbbbbbb");
+var str4 = new String(null);
+%DebugPrint(str1);
+%DebugPrint(str2);
+%DebugPrint(str3);
+%DebugPrint(str4);
+%SystemBreak();
+
+```
+
+四个字符串在内存中的表示如下：
+
+```
+gdb-peda$ job 0x10c97068a0f9
+0x10c97068a0f9: [JSValue]
+ - map = 0x3a8abb406981 [FastProperties]
+ - prototype = 0x28248a2978c1
+ - elements = 0x19cde9d02241 <FixedArray[0]> [FAST_STRING_WRAPPER_ELEMENTS]
+ - value = 0x28248a2aaff9 <String[15]: aaaaaaaaaaaaaaa>
+ - properties = {
+   #length: 0x19cde9d56379 <AccessorInfo> (accessor constant)
+ }
+gdb-peda$ job 0x10c97068a119
+0x10c97068a119: [JSValue]
+ - map = 0x3a8abb406981 [FastProperties]
+ - prototype = 0x28248a2978c1
+ - elements = 0x19cde9d02241 <FixedArray[0]> [FAST_STRING_WRAPPER_ELEMENTS]
+ - value = 0x28248a2aaff9 <String[15]: aaaaaaaaaaaaaaa>
+ - properties = {
+   #length: 0x19cde9d56379 <AccessorInfo> (accessor constant)
+ }
+gdb-peda$ job 0x10c97068a139
+0x10c97068a139: [JSValue]
+ - map = 0x3a8abb406981 [FastProperties]
+ - prototype = 0x28248a2978c1
+ - elements = 0x19cde9d02241 <FixedArray[0]> [FAST_STRING_WRAPPER_ELEMENTS]
+ - value = 0x28248a2ab061 <String[14]: bbbbbbbbbbbbbb>
+ - properties = {
+   #length: 0x19cde9d56379 <AccessorInfo> (accessor constant)
+ }
+gdb-peda$ job 0x10c97068a159
+0x10c97068a159: [JSValue]
+ - map = 0x3a8abb406981 [FastProperties]
+ - prototype = 0x28248a2978c1
+ - elements = 0x19cde9d02241 <FixedArray[0]> [FAST_STRING_WRAPPER_ELEMENTS]
+ - value = 0x19cde9d02251 <String[4]: null>
+ - properties = {
+   #length: 0x19cde9d56379 <AccessorInfo> (accessor constant)
+ }
+
+```
+
+可以看到，JavaScript中的字符串也是个对象，其数据保存在value属性中。两个相同的字符串只会在内存中保存一次，保存的地方看起来是在堆栈上面，然后两个字符串对象的value指针指向同一个地址处。如果是null字符串，其value指针会指向跟elements指针相近的地方，看起来它们可能都是程序中定义的一个泛用型数据。字符串的value属性内存表示如下：
+
+```
+gdb-peda$ x/10xg 0x28248a2aaff9
+0x28248a2aaff9:	0x92000034538f3023	0x00000000006548be
+0x28248a2ab009:	0x610000000f000000	0x6161616161616161
+0x28248a2ab019:	0x61de616161616161	0x1e000034538f3023
+0x28248a2ab029:	0x0000000000754f70	0x7300000004000000
+0x28248a2ab039:	0x61deadbeed327274	0xc6000034538f3023
+
+```
+
+第三个地址单元处以SMI类型存储了字符串长度，第四个地址单元开始就是字符串的数据，第一个地址单元打印出来可以看到是个Map，第二个地址单元只占用了低32位，是个不知名数据。
