@@ -1,0 +1,26 @@
+## 基本类型在内存中的存储
+
+首先是几个基础类型，包括整型（Smi/immediate small integer）、浮点数（Double）及指针（Pointers），在内存中保存的形态，按照参考文章中的描述：
+
+```
+Double: Shown as the 64-bit binary representation without any changes
+Smi: Represented as value << 32, i.e 0xdeadbeef is represented as 0xdeadbeef00000000
+Pointers: Represented as addr & 1. 0x2233ad9c2ed8 is represented as 0x2233ad9c2ed9
+
+```
+
+为了区分数字和指针指向的地址，v8将地址的最低位置为1，所以指针指向的地址-1才是该对象在内存中的真正地址。
+
+一个对象的内存中的前三个部分分别为：map属性，properties属性（对象成员保存在这里）和elements属性（数组成员保存在这里）
+
+elements属性的三个部分分别是：map属性、成员数量和成员
+
+## 类型辨认
+
+我们可以注意到，我们使用job命令读取一个地址时可以将其可视化打印成相应的数字或者对象，其中必定经过了类型辨认的阶段。
+
+整型很好辨认，其低32位全是0，浮点数和对象的辨认就需要依靠他们的map属性了。
+
+如果对象中的成员全是数字（整型/浮点数），那就不需要每个成员都带一个map属性，再用指针来表示了。
+
+当成员中存在对象时，指针会指向该成员的map属性。（浮点数变成map+浮点的存储形式，对象不变）
